@@ -13,16 +13,23 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [streamActive, setStreamActive] = useState(false);
 
   // Clean up camera stream when component unmounts or when step changes
   useEffect(() => {
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
-      }
+      cleanupCameraStream();
     };
   }, []);
+
+  const cleanupCameraStream = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+      setStreamActive(false);
+    }
+  };
 
   const startCamera = async (mode: 'user' | 'environment') => {
     try {
@@ -30,11 +37,7 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
       setPermissionDenied(false);
       
       // First, ensure any previous streams are cleaned up
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
-        videoRef.current.srcObject = null;
-      }
+      cleanupCameraStream();
 
       console.log("Requesting camera access...");
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -44,24 +47,25 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        setStreamActive(true);
         
-        // Play the video element and set the step after it's ready
-        const playPromise = videoRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              console.log("Video is playing, setting step to:", mode === 'user' ? 'frontCamera' : 'backCamera');
-              setStep(mode === 'user' ? 'frontCamera' : 'backCamera');
-            })
-            .catch(err => {
-              console.error("Error playing video:", err);
-              toast({
-                title: "Video Error",
-                description: "Could not play camera stream. Please try again.",
-                variant: "destructive",
-              });
+        // Directly set the step immediately after getting camera access
+        console.log("Setting step to:", mode === 'user' ? 'frontCamera' : 'backCamera');
+        setStep(mode === 'user' ? 'frontCamera' : 'backCamera');
+        
+        // Still try to play the video, but don't make UI update dependent on it
+        videoRef.current.play()
+          .then(() => {
+            console.log("Video started playing");
+          })
+          .catch(err => {
+            console.error("Error playing video:", err);
+            toast({
+              title: "Video Warning",
+              description: "Video may not be playing properly, but you can still capture an image.",
+              variant: "destructive",
             });
-        }
+          });
       }
     } catch (err) {
       console.error("Error accessing camera:", err);
@@ -78,30 +82,42 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
     if (!videoRef.current) return;
 
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
     const ctx = canvas.getContext('2d');
 
     if (ctx && videoRef.current) {
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      // If we have video dimensions, use them; otherwise, just capture whatever is visible
+      if (videoRef.current.videoWidth && videoRef.current.videoHeight) {
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      } else {
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "20px Arial";
+        ctx.fillText("Camera capture not available", 20, canvas.height / 2);
+      }
+      
       const image = canvas.toDataURL('image/jpeg');
       
       // Stop the camera stream
-      const stream = videoRef.current.srcObject as MediaStream;
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        videoRef.current.srcObject = null;
-      }
+      cleanupCameraStream();
 
       if (step === 'frontCamera') {
+        console.log("Front image captured, switching to back camera");
         setFrontImage(image);
         setStep('backCamera');
         setTimeout(() => startCamera('environment'), 500);
       } else if (step === 'backCamera' && frontImage) {
+        console.log("Back image captured, calling onCapture");
         onCapture(frontImage, image);
       }
     }
   };
+
+  // Debug output for current step
+  console.log("Current step:", step);
+  console.log("Stream active:", streamActive);
 
   return (
     <div className="w-full max-w-md mx-auto">
@@ -112,7 +128,10 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
             We'll snap two quick pics - first you, then your surroundings!
           </p>
           <button
-            onClick={() => startCamera('user')}
+            onClick={() => {
+              console.log("Let's Start button clicked");
+              startCamera('user');
+            }}
             className="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full font-inter 
                     transition-all hover:scale-105 flex items-center justify-center gap-3
                     animate-fade-up shadow-lg hover:shadow-purple-500/30 border-2 border-purple-200"
