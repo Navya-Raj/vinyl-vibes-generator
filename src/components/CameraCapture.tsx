@@ -1,5 +1,5 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Camera, ArrowRight, Circle } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
@@ -13,8 +13,25 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
 
+  // Clean up camera stream when component unmounts or when step changes
+  useEffect(() => {
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
   const startCamera = async (mode: 'user' | 'environment') => {
     try {
+      // First, ensure any previous streams are cleaned up
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: mode }
       });

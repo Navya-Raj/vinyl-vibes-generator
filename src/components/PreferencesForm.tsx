@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Disc, Music, Headphones } from 'lucide-react';
+import { Disc, Music, Headphones, ArrowRight } from 'lucide-react';
 
 interface PreferencesFormProps {
   onSubmit: (preferences: {
