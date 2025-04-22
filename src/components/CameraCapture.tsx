@@ -12,6 +12,7 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
   const [frontImage, setFrontImage] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
+  const [permissionDenied, setPermissionDenied] = useState(false);
 
   // Clean up camera stream when component unmounts or when step changes
   useEffect(() => {
@@ -25,6 +26,9 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
 
   const startCamera = async (mode: 'user' | 'environment') => {
     try {
+      // Reset permission denied state on each attempt
+      setPermissionDenied(false);
+      
       // First, ensure any previous streams are cleaned up
       if (videoRef.current && videoRef.current.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
@@ -32,22 +36,39 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
         videoRef.current.srcObject = null;
       }
 
+      console.log("Requesting camera access...");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: mode }
       });
+      console.log("Camera access granted");
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(err => {
-          console.error("Error playing video:", err);
-        });
-        setStep(mode === 'user' ? 'frontCamera' : 'backCamera');
+        
+        // Play the video element and set the step after it's ready
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log("Video is playing, setting step to:", mode === 'user' ? 'frontCamera' : 'backCamera');
+              setStep(mode === 'user' ? 'frontCamera' : 'backCamera');
+            })
+            .catch(err => {
+              console.error("Error playing video:", err);
+              toast({
+                title: "Video Error",
+                description: "Could not play camera stream. Please try again.",
+                variant: "destructive",
+              });
+            });
+        }
       }
     } catch (err) {
       console.error("Error accessing camera:", err);
+      setPermissionDenied(true);
       toast({
         title: "Camera Error",
-        description: "Could not access your camera. Please check permissions.",
+        description: "Could not access your camera. Please check permissions and try again.",
         variant: "destructive",
       });
     }
@@ -99,6 +120,13 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
             <Camera className="w-5 h-5" />
             <span className="font-medium tracking-wide">Let's Start!</span>
           </button>
+          
+          {permissionDenied && (
+            <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
+              <p className="font-medium">Camera access denied</p>
+              <p className="text-xs mt-1">Please allow camera access in your browser settings and try again</p>
+            </div>
+          )}
         </div>
       )}
 
