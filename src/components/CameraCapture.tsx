@@ -38,6 +38,9 @@ const CameraCapture = ({ onCapture }: CameraCaptureProps) => {
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(err => {
+          console.error("Error playing video:", err);
+        });
         setStep(mode === 'user' ? 'frontCamera' : 'backCamera');
       }
     } catch (err) {
